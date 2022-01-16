@@ -1,0 +1,82 @@
+version: '3.1'
+
+services:
+  proxy:
+    image: traefik:v2.5.6
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    command:
+      # - "--log.level=DEBUG"
+      # - "--api.insecure=true"
+      - '--providers.docker=true'
+      - '--providers.docker.exposedbydefault=false'
+      - '--entrypoints.web.address=:80'
+    ports:
+      # The HTTPS port
+      - '443:443'
+      # The HTTP port
+      - '80:80'
+      # The Web UI (enabled by --api.insecure=true)
+      - '8080:8080'
+    volumes:
+      # So that Traefik can listen to the Docker events
+      - '/var/run/docker.sock:/var/run/docker.sock:ro'
+    # networks:
+    #   - frontend
+    #   - backend
+
+  client:
+    image: singhjay/visiontour-client
+    deploy:
+      replicas: 5
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    environment:
+      NODE_ENV: production
+    ports:
+      - 3000:3000
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.client.rule=Host(`visiontour.docker.localhost`)'
+      - 'traefik.http.routers.client.entrypoints=web'
+
+  server:
+    image: singhjay/visiontour-server
+    deploy:
+      replicas: 5
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+      placement:
+        constraints: [node.role == manager]
+    environment:
+      NODE_ENV: production
+    ports:
+      - 8000:8000
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.server.rule=Host(`api.visiontour.localhost`)'
+      - 'traefik.http.routers.server.entrypoints=web'
+  visualizer:
+    image: bretfisher/visualizer
+    ports:
+      - 8080:8080
+    stop_grace_period: 1m30s
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
